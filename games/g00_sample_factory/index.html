@@ -1,0 +1,1371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sample Factory: sampling distributions of the mean</title>
+<meta name="description" content="An interactive game on the sampling distribution of the mean for ECON 262 Module 1.">
+<!--
+  ECON262_M01_game_sample-factory
+  Spec: ECON262_M01_game_G0-spec.md
+
+  One self-contained file: inline CSS, vanilla JavaScript, no libraries, no
+  network calls, no cookies, no localStorage, no analytics. Nothing about the
+  student is stored or sent. Colors are inlined from shared/palette.json.
+
+  The simulation between the SIM-BEGIN and SIM-END markers is the parity
+  surface. games/g00_sample_factory/tests/parity.mjs extracts that block from
+  this file and asserts it reproduces parity.json, which shared/sim.py
+  generates. Keep the two implementations in step.
+-->
+<style>
+  /* Color roles inlined from shared/palette.json. Every color distinction is
+     also carried by a fill pattern, line style, or text label, so the page
+     reads in grayscale. */
+  :root {
+    --bg: #0F1419;
+    --panel: #171E26;
+    --line: #2B3642;
+    --text: #FFFFFF;
+    --text-dim: #D8DEE4;
+    --population: #56B4E9;
+    --sample: #F0E442;
+    --statistic: #E69F00;
+    --sampling-dist: #009E73;
+    --parameter: #FFFFFF;
+    --normal-ref: #CC79A7;
+    --highlight: #F0E442;
+    --muted: #5C6670;
+    --good: #009E73;
+    --bad: #E69F00;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, "Source Sans 3", "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.35;
+  }
+  #app {
+    display: block;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 8px 10px 6px;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 14px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+  }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  .scoreboard { margin-left: auto; display: flex; gap: 14px; font-variant-numeric: tabular-nums; font-size: 14px; }
+  .scoreboard b { font-weight: 650; }
+  .scoreboard .k { color: var(--text-dim); font-weight: 400; }
+
+  /* Progress pips, with text alternative in the label */
+  .pips { display: flex; gap: 3px; margin: 0 0 8px; padding: 0; list-style: none; }
+  .pips li {
+    width: 100%; height: 5px; background: var(--line); border-radius: 2px;
+  }
+  .pips li.done { background: var(--sampling-dist); }
+  .pips li.now { background: var(--statistic); }
+
+  section.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 7px 9px 9px;
+    margin-bottom: 8px;
+  }
+  .panel-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+    font-size: 13px; color: var(--text-dim); margin-bottom: 4px;
+  }
+  .panel-head .tag {
+    font-size: 11px; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--text-dim); font-weight: 650;
+  }
+  .panel-head .vals { font-variant-numeric: tabular-nums; }
+  .swatch {
+    display: inline-block; width: 9px; height: 9px; margin-right: 4px;
+    vertical-align: baseline; border: 1px solid rgba(255,255,255,.5);
+  }
+  .sw-pop { background: var(--population); }
+  .sw-mean { background: var(--sampling-dist); }
+  .sw-sample { background: var(--sample); }
+  .sw-stat { background: var(--statistic); }
+
+  #brief { font-size: 14px; color: var(--text-dim); }
+  .costs { width: 100%; border-collapse: collapse; font-size: 13px; margin: 0; }
+  .costs th, .costs td { text-align: left; padding: 0; font-weight: 400; color: var(--text-dim); line-height: 1.3; }
+  .costs td.n, .costs th.n { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  .costs tr.sum th, .costs tr.sum td {
+    border-top: 1px solid var(--line); padding-top: 3px; font-weight: 650; color: var(--text);
+  }
+  .costs tr.run th, .costs tr.run td { color: var(--statistic); font-weight: 650; }
+  .costs tr.floor th, .costs tr.floor td { color: var(--muted); }
+  .costs tr.advice td {
+    padding-top: 4px; color: var(--text-dim); border-top: 1px solid var(--line);
+  }
+  .costs caption { text-align: left; font-weight: 650; color: var(--text); padding-bottom: 1px; }
+  /* Chart text is sized in viewBox units, so on a phone it scales down to about
+     5 px. Bump it there; the numbers also appear as text above each chart. */
+  @media (max-width: 520px) {
+    #sample-chart svg text, #est-chart svg text { font-size: 28px; }
+    #sample-chart svg, #est-chart svg { overflow: visible; }
+    /* The axis titles do not fit once the tick labels are legible, and the
+       readout above each chart already names what the axis is. */
+    #sample-chart svg .axis-title, #est-chart svg .axis-title { display: none; }
+  }
+  #brief .zones { margin: 6px 0 0; padding: 0; list-style: none; display: flex; gap: 6px; flex-wrap: wrap; }
+  #brief .zones li {
+    border: 1px solid var(--line); border-radius: 5px; padding: 2px 8px;
+    font-variant-numeric: tabular-nums; color: var(--text);
+  }
+  #brief .zones li.is-pick { border-color: var(--statistic); background: #1C2430; }
+  #brief b { color: var(--text); font-weight: 650; }
+  .controls-row.tight { margin-top: 6px; }
+  #book-row button.booked { background: var(--statistic); border-color: var(--statistic); color: #2A1B00; }
+
+  svg { display: block; width: 100%; height: auto; }
+
+  /* Prompt and controls */
+  .prompt { font-size: 15px; font-weight: 600; margin: 2px 0 8px; }
+  .prompt .n-chip {
+    display: inline-block; background: var(--line); border-radius: 4px;
+    padding: 1px 7px; font-variant-numeric: tabular-nums; margin-left: 2px;
+  }
+  fieldset { border: 0; margin: 0; padding: 0; }
+  legend { padding: 0; font-size: 13px; color: var(--text-dim); }
+
+  .curve-key {
+    margin: 1px 0 -2px; font-size: 12px; line-height: 1.2; color: var(--text-dim);
+    display: flex; gap: 14px; flex-wrap: wrap;
+  }
+  .curve-key .key-guess { color: var(--sample); font-weight: 700; letter-spacing: -1px; }
+  .curve-key .key-truth { color: var(--normal-ref); font-weight: 700; letter-spacing: -2px; }
+
+  .stepper { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .stepper label { font-size: 14px; }
+  input[type="number"] {
+    width: 86px; height: 44px; font-size: 17px; text-align: center;
+    background: #10161D; color: var(--text); border: 1px solid var(--muted);
+    border-radius: 6px; font-variant-numeric: tabular-nums;
+    font-family: inherit;
+  }
+  input[type="range"] {
+    flex: 1 1 180px; min-width: 150px; height: 44px; accent-color: var(--statistic);
+    background: transparent;
+  }
+  .readout {
+    font-variant-numeric: tabular-nums; font-size: 17px; font-weight: 650;
+    min-width: 84px; text-align: right;
+  }
+  .cost { font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+  button {
+    font-family: inherit; font-size: 14px; font-weight: 600;
+    min-height: 44px; min-width: 44px; padding: 0 14px;
+    background: #212B36; color: var(--text);
+    border: 1px solid var(--muted); border-radius: 6px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #2B3642; }
+  button.primary { background: var(--sampling-dist); border-color: var(--sampling-dist); color: #06231B; }
+  button.primary:hover:not(:disabled) { background: #00B384; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-step { width: 44px; padding: 0; font-size: 20px; line-height: 1; }
+
+  :focus-visible { outline: 3px solid var(--sample); outline-offset: 2px; }
+  .choice:focus-within { outline: 3px solid var(--sample); outline-offset: 2px; }
+
+  .feedback {
+    min-height: 54px; font-size: 14px; border-left: 3px solid var(--line);
+    padding: 4px 0 4px 9px; margin: 8px 0 0; color: var(--text-dim);
+  }
+  .feedback.ok { border-left-color: var(--sampling-dist); color: var(--text); }
+  .feedback.no { border-left-color: var(--statistic); color: var(--text); }
+  .feedback .pts { font-weight: 700; color: var(--text); }
+  .controls-row {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px;
+  }
+  .controls-row .spacer { margin-left: auto; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .hint { font-size: 13px; color: var(--text-dim); margin-top: 8px; }
+  .hint kbd {
+    font-family: inherit; background: var(--line); border-radius: 3px;
+    padding: 0 4px; color: var(--text);
+  }
+  .scenario-banner {
+    background: var(--line); border: 1px solid var(--muted); border-radius: 6px;
+    padding: 6px 9px; margin-bottom: 8px; font-size: 13px; color: var(--text-dim);
+  }
+  details.about { margin-top: 10px; font-size: 13px; color: var(--text-dim); }
+  details.about summary { cursor: pointer; min-height: 28px; }
+  details.about p { margin: 6px 0; }
+
+  /* One column below 600px, usable at 320px */
+  @media (max-width: 600px) {
+    .choices { flex-direction: column; }
+    .scoreboard { margin-left: 0; width: 100%; }
+    h1 { font-size: 16px; }
+    #app { padding: 6px 8px 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<main id="app">
+  <header>
+    <h1>Sample Factory</h1>
+    <div class="scoreboard" role="group" aria-label="Game progress">
+      <span><span class="k">Week</span> <b id="hdr-round">1 of 5</b></span>
+      <span><span class="k">Season</span> <b id="hdr-score">$0</b></span>
+    </div>
+  </header>
+
+  <div id="scenario-banner" class="scenario-banner" hidden></div>
+  <ul class="pips" id="pips" aria-hidden="true"></ul>
+
+  <section class="panel" aria-labelledby="brief-head">
+    <h2 class="prompt" id="brief-head">Next week</h2>
+    <div id="brief"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="sample-head">
+    <div class="panel-head" id="sample-head">
+      <span class="tag"><span class="swatch sw-sample"></span>Orders you timed</span>
+      <span id="sample-vals" class="vals"></span>
+    </div>
+    <div id="sample-chart"></div>
+    <div class="controls-row tight">
+      <button id="btn-one">Time 1 order</button>
+      <button id="btn-ten">Time 10</button>
+      <span class="spacer"></span>
+      <span class="cost" id="spend"></span>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="est-head">
+    <div class="panel-head" id="est-head">
+      <span class="tag"><span class="swatch sw-stat"></span>Your estimate</span>
+      <span id="est-vals" class="vals"></span>
+    </div>
+    <div id="est-chart"></div>
+  </section>
+
+  <p class="feedback" id="feedback">Time a few orders, then book your temps.</p>
+
+  <div class="controls-row" id="book-row" role="group" aria-label="Book temps for next week"></div>
+
+  <div class="controls-row">
+    <button id="btn-next" disabled>Next week</button>
+    <span class="spacer"></span>
+    <button id="btn-again" hidden>Play again</button>
+  </div>
+
+  <p class="hint">
+    <kbd>T</kbd> times an order, <kbd>Shift</kbd>+<kbd>T</kbd> ten,
+    <kbd>0</kbd>&ndash;<kbd>4</kbd> books temps, <kbd>N</kbd> next week.
+  </p>
+
+  <details class="about">
+    <summary>What this game shows</summary>
+    <p>You are rostering a warehouse. The labour you need depends on the average time an
+    order takes to pick, and you cannot time every order, so you pay to time a few and
+    work from their average. That average, x-bar, is not the truth: it is one draw from a
+    whole pile of averages you might have got. The pile sits on the true mean, and its
+    spread is sigma divided by the square root of n, so each extra order you time buys
+    less precision than the one before. Because timing costs money and being wrong costs
+    money, there is a point where one more order is not worth it. Finding that point is
+    the game.</p>
+    <p>Nothing you do here is stored or sent anywhere.</p>
+  </details>
+
+  <div id="live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+</main>
+
+<script>
+"use strict";
+
+// ===== SIM-BEGIN =====
+// Mirror of shared/sim.py. Every convention below is pinned in that file's
+// docstring and asserted against parity.json. Do not change one side alone.
+var MASK32 = 0xFFFFFFFF;
+var TWO32 = 4294967296;
+
+function mulberry32(a) {
+  a = a & MASK32;
+  return function () {
+    a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / TWO32;
+  };
+}
+
+function Rng(seed) {
+  this.seed = seed & MASK32;
+  this._next = mulberry32(this.seed);
+  this._spare = null;
+}
+Rng.prototype.uniform = function () { return this._next(); };
+Rng.prototype.normal = function () {
+  // Box-Muller, both outputs used in order; the second is cached.
+  if (this._spare !== null) { var z = this._spare; this._spare = null; return z; }
+  var u1 = this._next(), u2 = this._next();
+  var mag = Math.sqrt(-2 * Math.log(1 - u1));
+  this._spare = mag * Math.sin(2 * Math.PI * u2);
+  return mag * Math.cos(2 * Math.PI * u2);
+};
+Rng.prototype.exponential = function (mean) {
+  // -mean * ln(1 - u): the argument stays in (0, 1], so u = 0 is safe and no
+  // draw is ever discarded.
+  return -mean * Math.log(1 - this._next());
+};
+
+// All three populations share mu = 12 on purpose. Only spread and shape change.
+var POPULATIONS = {
+  warehouse: {
+    id: "warehouse", story: "Standard orders",
+    definition: "3 + Exponential(mean 9)",
+    mu: 12, sigma: 9, shapeWord: "Skewed right"
+  },
+  uniform: {
+    id: "uniform", story: "Kitting station, fixed work content",
+    definition: "Uniform(6, 18)",
+    mu: 12, sigma: Math.sqrt(144 / 12), shapeWord: "Roughly symmetric"
+  },
+  bimodal: {
+    id: "bimodal", story: "Mixed shift: small parcels and freight pallets",
+    definition: "50/50 mixture of Normal(6, 1.5) and Normal(18, 1.5)",
+    mu: 12, sigma: Math.sqrt(1.5 * 1.5 + 6 * 6), shapeWord: "Two humps"
+  }
+};
+
+function draw(rng, pop) {
+  if (pop === "warehouse") return 3 + rng.exponential(9);
+  if (pop === "uniform") return 6 + 12 * rng.uniform();
+  if (pop === "bimodal") {
+    var center = rng.uniform() < 0.5 ? 6 : 18;
+    return center + 1.5 * rng.normal();
+  }
+  throw new Error("unknown population: " + pop);
+}
+function draws(rng, pop, count) {
+  var out = new Array(count);
+  for (var i = 0; i < count; i++) out[i] = draw(rng, pop);
+  return out;
+}
+function sampleMean(rng, pop, n) {
+  var total = 0;
+  for (var i = 0; i < n; i++) total += draw(rng, pop);
+  return total / n;
+}
+function sampleMeans(rng, pop, n, reps) {
+  var out = new Array(reps);
+  for (var i = 0; i < reps; i++) out[i] = sampleMean(rng, pop, n);
+  return out;
+}
+
+var TOL = 1e-9;
+function muOf(pop) { return POPULATIONS[pop].mu; }
+function sigmaOf(pop) { return POPULATIONS[pop].sigma; }
+function seOf(pop, n) { return POPULATIONS[pop].sigma / Math.sqrt(n); }
+function minN(pop, margin) {
+  // Smallest n with 2 * sigma / sqrt(n) <= margin. B1, B2 and B3 all land on
+  // an exact integer, so the ceiling takes a 1e-9 tolerance.
+  var exact = Math.pow(2 * POPULATIONS[pop].sigma / margin, 2);
+  return Math.max(1, Math.ceil(exact - TOL));
+}
+function passesMargin(pop, n, margin) {
+  return 2 * seOf(pop, n) <= margin + TOL;
+}
+function meanOf(a) {
+  var s = 0;
+  for (var i = 0; i < a.length; i++) s += a[i];
+  return s / a.length;
+}
+function sdOf(a) {
+  if (a.length < 2) return 0;
+  var m = meanOf(a), s = 0;
+  for (var i = 0; i < a.length; i++) s += (a[i] - m) * (a[i] - m);
+  return Math.sqrt(s / (a.length - 1));
+}
+
+var POP_AXIS = [0, 40, 1];
+var MEANS_AXIS = [0, 30, 0.5];
+
+function binCounts(values, lo, hi, width) {
+  // Values off the axis are left out, not folded into the edge bins. Folding
+  // them in puts a false spike at the end of a long tail, which is exactly
+  // the wrong lesson for the warehouse population. binOverflow counts them so
+  // the chart can label them instead.
+  var nbins = Math.round((hi - lo) / width);
+  var counts = new Array(nbins);
+  for (var i = 0; i < nbins; i++) counts[i] = 0;
+  for (var j = 0; j < values.length; j++) {
+    var idx = Math.floor((values[j] - lo) / width);
+    if (idx >= 0 && idx < nbins) counts[idx]++;
+  }
+  return counts;
+}
+
+function binOverflow(values, lo, hi, width) {
+  var nbins = Math.round((hi - lo) / width);
+  var below = 0, above = 0;
+  for (var i = 0; i < values.length; i++) {
+    var idx = Math.floor((values[i] - lo) / width);
+    if (idx < 0) below++; else if (idx >= nbins) above++;
+  }
+  return { left: below, right: above };
+}
+
+function roundSeedFor(session, roundIndex) {
+  return 2620000 + session * 100 + roundIndex;
+}
+
+function shuffleOrder(rng, length) {
+  var order = [];
+  for (var i = 0; i < length; i++) order.push(i);
+  for (var k = length - 1; k > 0; k--) {
+    var j = Math.floor(rng.uniform() * (k + 1));
+    var t = order[k]; order[k] = order[j]; order[j] = t;
+  }
+  return order;
+}
+
+function smoothedHist(values, nbins) {
+  var lo = Math.min.apply(null, values), hi = Math.max.apply(null, values), i;
+  if (hi - lo <= 0) return null;
+  var counts = new Array(nbins);
+  for (i = 0; i < nbins; i++) counts[i] = 0;
+  for (i = 0; i < values.length; i++) {
+    var idx = Math.floor((values[i] - lo) / (hi - lo) * nbins);
+    counts[Math.min(idx, nbins - 1)]++;
+  }
+  var smooth = new Array(nbins);
+  for (i = 0; i < nbins; i++) {
+    smooth[i] = (counts[Math.max(i - 1, 0)] + counts[i] + counts[Math.min(i + 1, nbins - 1)]) / 3;
+  }
+  return { lo: lo, hi: hi, smooth: smooth, nbins: nbins };
+}
+
+// Prominent peaks, plateaus collapsed, peaks merged when no real valley
+// separates them. A peak counts only if it reaches 18 percent of the tallest
+// bin, and two peaks stay separate only if the lowest point between them
+// drops to 60 percent or less of the shorter one. Without the valley rule,
+// noise on the shoulder of one bell reads as a second hump.
+function peakIndices(smooth) {
+  var nb = smooth.length, i, maxV = 0;
+  for (i = 0; i < nb; i++) if (smooth[i] > maxV) maxV = smooth[i];
+  var cand = [];
+  for (i = 0; i < nb; i++) {
+    var left = i === 0 ? -Infinity : smooth[i - 1];
+    var right = i === nb - 1 ? -Infinity : smooth[i + 1];
+    if (smooth[i] >= left && smooth[i] >= right && smooth[i] >= 0.18 * maxV) cand.push(i);
+  }
+  var merged = [];
+  for (i = 0; i < cand.length; i++) {
+    if (merged.length && cand[i] - merged[merged.length - 1] <= 2) {
+      if (smooth[cand[i]] > smooth[merged[merged.length - 1]]) merged[merged.length - 1] = cand[i];
+      continue;
+    }
+    merged.push(cand[i]);
+  }
+  var kept = [];
+  for (i = 0; i < merged.length; i++) {
+    var b = merged[i];
+    if (!kept.length) { kept.push(b); continue; }
+    var a = kept[kept.length - 1], valley = Infinity, j;
+    for (j = a; j <= b; j++) valley = Math.min(valley, smooth[j]);
+    if (valley <= 0.6 * Math.min(smooth[a], smooth[b])) kept.push(b);
+    else if (smooth[b] > smooth[a]) kept[kept.length - 1] = b;
+  }
+  return kept;
+}
+
+function peakPositions(values) {
+  var h = smoothedHist(values, 24);
+  if (!h) return [];
+  var idx = peakIndices(h.smooth), out = [], i;
+  for (i = 0; i < idx.length; i++) out.push(h.lo + (idx[i] + 0.5) / h.nbins * (h.hi - h.lo));
+  return out;
+}
+
+function isFlatPile(values) {
+  var h = smoothedHist(values, 24);
+  if (!h) return false;
+  var core = h.smooth.slice(2, 22), i, mx = 0, mn = Infinity;
+  for (i = 0; i < core.length; i++) {
+    if (core[i] > mx) mx = core[i];
+    if (core[i] < mn) mn = core[i];
+  }
+  return mn > 0 && mx / mn <= 1.8;
+}
+
+// Hump count wins over skew: a dip in the middle is the thing a student most
+// needs told. "Three humps" is reported where it is true, which is what the
+// n = 2 mixture actually produces (peaks at 6, 12 and 18).
+function shapeWord(values) {
+  var m = meanOf(values), s = sdOf(values), i;
+  if (s <= 0) return "Roughly symmetric";
+  var peaks = peakPositions(values);
+  if (peaks.length >= 3) return "Three humps";
+  if (peaks.length === 2) return "Two humps";
+  if (isFlatPile(values)) return "Flat";
+  var skew = 0;
+  for (i = 0; i < values.length; i++) skew += Math.pow((values[i] - m) / s, 3);
+  skew /= values.length;
+  if (Math.abs(skew) >= 0.5) return skew > 0 ? "Skewed right" : "Skewed left";
+  return "Roughly symmetric";
+}
+// ===== SIM-END =====
+
+// ---------------------------------------------------------------------------
+// Weeks. Each week is one rostering decision: time some orders, then book.
+//
+// Capacity is in picking-minutes. Booking t temps buys base + t x perTemp of
+// them; the week needs VOLUME x (true mean) minutes. Short of that you pay
+// overtime, over it you pay for idle time, and those two rates put the
+// break-even points between roster sizes at fixed average times. Those are the
+// zones drawn on the estimate axis, and they are what the student is aiming at.
+//
+// base and perTemp are chosen per week so the correct answer moves (1, 2, 0, 3,
+// 1 temps) and so the distance from mu = 12 to the nearest zone edge varies,
+// which is what makes some weeks worth far more sampling than others.
+// ---------------------------------------------------------------------------
+var VOLUME = 1000;            // orders to pick next week
+var IDLE_RATE = 0.30;         // dollars per booked minute nobody uses
+var OT_RATE = 0.70;           // dollars per minute short
+var COST_PER_TIMING = 4;      // dollars to stopwatch one order
+var MAX_TEMPS = 4;
+var EST_AXIS = [0, 24];       // the estimate ruler, in minutes
+
+var WEEKS = [
+  { id: "W1", pop: "warehouse", base: 7200, perTemp: 6000 },
+  { id: "W2", pop: "uniform", base: 3000, perTemp: 5000 },
+  { id: "W3", pop: "bimodal", base: 13600, perTemp: 8000 },
+  { id: "W4", pop: "warehouse", base: 800, perTemp: 4000 },
+  { id: "W5", pop: "uniform", base: 7200, perTemp: 6000 }
+];
+
+// --- What the sampling was worth -----------------------------------------
+// A rational student books the roster their x-bar points at, and by the central
+// limit theorem x-bar is roughly Normal(mu, sigma / root n). So the expected bill
+// at a given n is the timing plus the probability-weighted labour over the zones.
+// Timing is linear in n and the error it prevents falls as 1 / root n, so this has
+// a genuine interior minimum, and it is flat around it.
+function normCdf(z) {
+  if (z === Infinity) return 1;
+  if (z === -Infinity) return 0;
+  var sign = z < 0 ? -1 : 1, x = Math.abs(z) / Math.SQRT2;
+  var t = 1 / (1 + 0.3275911 * x);
+  var y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t -
+    0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return 0.5 * (1 + sign * y);
+}
+
+function expectedBill(w, mu, sigma, n) {
+  var se = sigma / Math.sqrt(n), zs = zonesOf(w), e = 0, i;
+  for (i = 0; i < zs.length; i++) {
+    var lo = i === 0 ? -Infinity : zs[i].lo;
+    var hi = i === zs.length - 1 ? Infinity : zs[i].hi;
+    e += (normCdf((hi - mu) / se) - normCdf((lo - mu) / se)) * laborCost(w, zs[i].temps, mu);
+  }
+  return n * COST_PER_TIMING + e;
+}
+
+var MAX_SAMPLE = 200;
+// The cheapest place to stop, plus the band of n that costs within 5 percent of it.
+function bestStop(w, mu, sigma) {
+  var bn = 1, bc = expectedBill(w, mu, sigma, 1), n, c;
+  for (n = 2; n <= MAX_SAMPLE; n++) {
+    c = expectedBill(w, mu, sigma, n);
+    if (c < bc) { bc = c; bn = n; }
+  }
+  var lo = bn, hi = bn, cap = bc * 1.05;
+  while (lo > 1 && expectedBill(w, mu, sigma, lo - 1) <= cap) lo--;
+  while (hi < MAX_SAMPLE && expectedBill(w, mu, sigma, hi + 1) <= cap) hi++;
+  return { n: bn, cost: bc, lo: lo, hi: hi };
+}
+
+function capacityOf(w, t) { return w.base + t * w.perTemp; }
+function workFor(mu) { return VOLUME * mu; }
+function laborCost(w, t, mu) {
+  var cap = capacityOf(w, t), work = workFor(mu);
+  return cap >= work ? (cap - work) * IDLE_RATE : (work - cap) * OT_RATE;
+}
+// Break-even average time between t temps and t + 1.
+function thresholdAt(w, t) {
+  return (w.base + w.perTemp * (t + IDLE_RATE / (IDLE_RATE + OT_RATE))) / VOLUME;
+}
+function bestTemps(w, mu) {
+  var best = 0, bc = laborCost(w, 0, mu);
+  for (var t = 1; t <= MAX_TEMPS; t++) {
+    var c = laborCost(w, t, mu);
+    if (c < bc - 1e-9) { bc = c; best = t; }
+  }
+  return best;
+}
+function zonesOf(w) {
+  var out = [], prev = EST_AXIS[0];
+  for (var t = 0; t <= MAX_TEMPS; t++) {
+    var hi = t === MAX_TEMPS ? EST_AXIS[1] : thresholdAt(w, t);
+    if (hi > EST_AXIS[1]) hi = EST_AXIS[1];
+    if (hi > prev + 1e-9) out.push({ temps: t, lo: prev, hi: hi });
+    prev = hi;
+    if (prev >= EST_AXIS[1] - 1e-9) break;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Formatting
+// ---------------------------------------------------------------------------
+function trim(s) { return s.replace(/\.0+$/, "").replace(/(\.[0-9]*[1-9])0+$/, "$1"); }
+function f1(x) { return trim(x.toFixed(1)); }
+function f2(x) { return trim(x.toFixed(2)); }
+function fixed1(x) { return x.toFixed(1); }
+function fixed2(x) { return x.toFixed(2); }
+function money(x) { return "$" + x.toLocaleString("en-US"); }
+function commas(x) { return x.toLocaleString("en-US"); }
+
+// ---------------------------------------------------------------------------
+// Charts. SVG only, role="img", aria-label states the key numbers. Population
+// is a solid fill, sample means carry a dot pattern, the target band is
+// hatched, so grayscale still distinguishes every series.
+// ---------------------------------------------------------------------------
+var PAT = '' +
+  '<defs>' +
+  '<pattern id="dots" width="4" height="4" patternUnits="userSpaceOnUse">' +
+  '<rect width="4" height="4" fill="#009E73"/>' +
+  '<circle cx="1" cy="1" r="1" fill="#0F1419" opacity=".55"/>' +
+  '</pattern>' +
+  '<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">' +
+  '<rect width="6" height="6" fill="#F0E442" opacity=".16"/>' +
+  '<line x1="0" y1="0" x2="0" y2="6" stroke="#F0E442" stroke-width="2" opacity=".55"/>' +
+  '</pattern>' +
+  '<pattern id="dotsmini" width="3" height="3" patternUnits="userSpaceOnUse">' +
+  '<rect width="3" height="3" fill="#009E73"/>' +
+  '<circle cx="0.8" cy="0.8" r="0.7" fill="#0F1419" opacity=".55"/>' +
+  '</pattern>' +
+  '</defs>';
+
+// Every candidate in round A must be distinguishable from its text alone, not
+// only from the picture. Shape word plus center, spread, hump positions and
+// range does that in every round: A2's correct pile is three humps at 6, 12
+// and 18 while its trap is two humps with a hole at 12, and A3's flat trap
+// differs from the bell by shape word.
+function pileDescription(values) {
+  var peaks = peakPositions(values);
+  var word = shapeWord(values);
+  var bits = word.toLowerCase() + ", centered at " + fixed1(meanOf(values)) +
+    ", spread " + fixed2(sdOf(values));
+  if (peaks.length === 1) {
+    bits += ", one peak near " + fixed1(peaks[0]);
+  } else if (peaks.length > 1) {
+    bits += ", peaks near " + peaks.map(function (p) { return fixed1(p); }).join(" and ");
+  }
+  bits += ", values from " + fixed1(Math.min.apply(null, values)) +
+    " to " + fixed1(Math.max.apply(null, values));
+  return bits;
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function tickValues(lo, hi) {
+  var span = hi - lo;
+  var step = span <= 8 ? 2 : span <= 16 ? 4 : span <= 32 ? 5 : 10;
+  var out = [], v = Math.ceil(lo / step) * step;
+  for (; v <= hi + 1e-9; v += step) out.push(Math.round(v * 100) / 100);
+  return out;
+}
+
+/* opts: counts, lo, hi, width, fill, height, ariaLabel, mu, band {lo,hi,label},
+   marker (x of a diamond), normalCurve {mu,sd}, overflow {left,right},
+   xLabel, mini */
+function histSvg(o) {
+  var W = 1000, H = o.height || 150;
+  var padL = o.mini ? 4 : 30, padR = o.mini ? 4 : 12;
+  var padT = 8, padB = o.mini ? 20 : (o.xLabel ? 44 : 26);
+  var plotW = W - padL - padR, plotH = H - padT - padB;
+  var nb = o.counts.length;
+  var maxC = 0, i;
+  for (i = 0; i < nb; i++) if (o.counts[i] > maxC) maxC = o.counts[i];
+  if (maxC <= 0) maxC = 1;
+  var bw = plotW / nb;
+  var x = function (v) { return padL + (v - o.lo) / (o.hi - o.lo) * plotW; };
+  var y = function (c) { return padT + plotH - (c / maxC) * plotH; };
+  var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(o.ariaLabel) + '" preserveAspectRatio="none" focusable="false">';
+  s += PAT;
+
+  // target band, behind the bars
+  if (o.band) {
+    var bx = x(o.band.lo), bx2 = x(o.band.hi);
+    s += '<rect x="' + bx + '" y="' + padT + '" width="' + (bx2 - bx) + '" height="' + plotH + '" fill="url(#hatch)"/>';
+    s += '<line x1="' + bx + '" y1="' + padT + '" x2="' + bx + '" y2="' + (padT + plotH) + '" stroke="#F0E442" stroke-width="2"/>';
+    s += '<line x1="' + bx2 + '" y1="' + padT + '" x2="' + bx2 + '" y2="' + (padT + plotH) + '" stroke="#F0E442" stroke-width="2"/>';
+  }
+
+  // bars
+  for (i = 0; i < nb; i++) {
+    if (o.counts[i] <= 0) continue;
+    var bx0 = padL + i * bw;
+    var h = padT + plotH - y(o.counts[i]);
+    if (h < 1) h = 1;
+    s += '<rect x="' + bx0.toFixed(2) + '" y="' + (padT + plotH - h).toFixed(2) +
+         '" width="' + Math.max(bw - 0.4, 0.6).toFixed(2) + '" height="' + h.toFixed(2) +
+         '" fill="' + o.fill + '"/>';
+  }
+
+  // the student's predicted bell: yellow and dashed, so it is still distinct
+  // from the pink reference curve in grayscale. Drawn first, under the truth.
+  if (o.guessCurve) {
+    var gpts = [], gk, gc = o.guessCurve;
+    for (gk = 0; gk <= 120; gk++) {
+      var gvx = o.lo + (o.hi - o.lo) * gk / 120;
+      var gz = (gvx - gc.mu) / gc.sd;
+      var gdens = Math.exp(-0.5 * gz * gz);
+      gpts.push(x(gvx).toFixed(1) + "," + (padT + plotH - gdens * plotH * 0.96).toFixed(1));
+    }
+    s += '<polyline points="' + gpts.join(" ") + '" fill="none" stroke="#F0E442" ' +
+         'stroke-width="2.5" stroke-dasharray="8 5"/>';
+  }
+
+  // normal reference curve
+  if (o.normalCurve) {
+    var pts = [], k, nc = o.normalCurve;
+    for (k = 0; k <= 120; k++) {
+      var vx = o.lo + (o.hi - o.lo) * k / 120;
+      var z = (vx - nc.mu) / nc.sd;
+      var dens = Math.exp(-0.5 * z * z);
+      pts.push(x(vx).toFixed(1) + "," + (padT + plotH - dens * plotH * 0.96).toFixed(1));
+    }
+    s += '<polyline points="' + pts.join(" ") + '" fill="none" stroke="#CC79A7" stroke-width="2.5"/>';
+  }
+
+  // mu line, white dashed
+  if (o.mu !== undefined) {
+    s += '<line x1="' + x(o.mu) + '" y1="' + (padT - 3) + '" x2="' + x(o.mu) + '" y2="' + (padT + plotH) +
+         '" stroke="#FFFFFF" stroke-width="2" stroke-dasharray="6 5"/>';
+    if (!o.mini) {
+      // Sits lower when a target band is drawn, so the two labels never overlap.
+      var muY = o.band ? padT + 40 : padT + 15;
+      s += '<text x="' + (x(o.mu) + 7) + '" y="' + muY + '" fill="#FFFFFF" font-size="19" font-family="inherit">mu = ' + f1(o.mu) + '</text>';
+    }
+  }
+
+  // diamond for the sample mean currently landing
+  if (o.marker !== undefined && o.marker !== null) {
+    var mx = x(o.marker), my = padT + plotH + 1;
+    s += '<polygon points="' + mx + ',' + (my - 9) + ' ' + (mx + 7) + ',' + my + ' ' + mx + ',' + (my + 9) + ' ' + (mx - 7) + ',' + my +
+         '" fill="#E69F00" stroke="#0F1419" stroke-width="1"/>';
+  }
+
+  // axis
+  s += '<line x1="' + padL + '" y1="' + (padT + plotH) + '" x2="' + (W - padR) + '" y2="' + (padT + plotH) + '" stroke="#5C6670" stroke-width="1.5"/>';
+  var ticks = tickValues(o.lo, o.hi);
+  for (i = 0; i < ticks.length; i++) {
+    var tx = x(ticks[i]);
+    s += '<line x1="' + tx + '" y1="' + (padT + plotH) + '" x2="' + tx + '" y2="' + (padT + plotH + 4) + '" stroke="#5C6670" stroke-width="1.5"/>';
+    s += '<text x="' + tx + '" y="' + (padT + plotH + (o.mini ? 15 : 21)) + '" fill="#D8DEE4" font-size="' + (o.mini ? 15 : 18) +
+         '" text-anchor="middle" font-family="inherit">' + f1(ticks[i]) + '</text>';
+  }
+  if (o.band && o.band.label) {
+    s += '<text x="' + ((x(o.band.lo) + x(o.band.hi)) / 2) + '" y="' + (padT + 15) +
+         '" fill="#FFFFFF" font-size="19" text-anchor="middle" font-family="inherit">' + esc(o.band.label) + '</text>';
+  }
+  if (o.overflow) {
+    if (o.overflow.left > 0) {
+      s += '<text x="' + (padL + 3) + '" y="' + (padT + 16) + '" fill="#E69F00" font-size="17" font-family="inherit">' + commas(o.overflow.left) + ' below ' + f1(o.lo) + '</text>';
+    }
+    if (o.overflow.right > 0) {
+      s += '<text x="' + (W - padR - 3) + '" y="' + (padT + 16) + '" fill="#E69F00" font-size="17" text-anchor="end" font-family="inherit">' + commas(o.overflow.right) + ' above ' + f1(o.hi) + '</text>';
+    }
+  }
+  if (o.xLabel && !o.mini) {
+    s += '<text class="axis-title" x="' + (padL + plotW / 2) + '" y="' + (H - 6) + '" fill="#D8DEE4" font-size="17" text-anchor="middle" font-family="inherit">' + esc(o.xLabel) + '</text>';
+  }
+  s += "</svg>";
+  return s;
+}
+
+// ---------------------------------------------------------------------------
+// The estimate ruler: decision zones, the running x-bar, and its error bar.
+// ---------------------------------------------------------------------------
+function zoneSvg(o) {
+  var W = 1000, H = 118, padL = 26, padR = 14, padT = 20, padB = 42;
+  var plotW = W - padL - padR, plotH = H - padT - padB;
+  var x = function (v) { return padL + (v - o.lo) / (o.hi - o.lo) * plotW; };
+  var i, s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' +
+    esc(o.ariaLabel) + '" preserveAspectRatio="none" focusable="false">';
+  s += PAT;
+
+  for (i = 0; i < o.zones.length; i++) {
+    var z = o.zones[i], zx = x(z.lo), zw = x(z.hi) - x(z.lo);
+    var on = o.pick !== null && o.pick !== undefined && o.pick === z.temps;
+    s += '<rect x="' + zx.toFixed(1) + '" y="' + padT + '" width="' + zw.toFixed(1) +
+      '" height="' + plotH + '" fill="' + (on ? "#24303E" : (i % 2 ? "#141C25" : "#10161D")) +
+      '" stroke="#2B3642" stroke-width="1"/>';
+    if (zw > 52) {
+      s += '<text x="' + (zx + zw / 2).toFixed(1) + '" y="' + (padT + 20) +
+        '" fill="' + (on ? "#FFFFFF" : "#D8DEE4") + '" font-size="17" font-family="inherit" ' +
+        'text-anchor="middle">' + z.temps + (z.temps === 1 ? " temp" : " temps") + '</text>';
+    }
+  }
+  for (i = 1; i < o.zones.length; i++) {
+    var tx = x(o.zones[i].lo);
+    s += '<line x1="' + tx.toFixed(1) + '" y1="' + padT + '" x2="' + tx.toFixed(1) +
+      '" y2="' + (padT + plotH) + '" stroke="#F0E442" stroke-width="2"/>';
+  }
+
+  // the estimate: two standard errors either side, then the diamond
+  if (o.xbar !== null && o.xbar !== undefined) {
+    var cy = padT + plotH - 15;
+    if (o.se > 0) {
+      var bl = Math.max(o.lo, o.xbar - 2 * o.se), bh = Math.min(o.hi, o.xbar + 2 * o.se);
+      s += '<rect x="' + x(bl).toFixed(1) + '" y="' + (cy - 9) + '" width="' +
+        Math.max(x(bh) - x(bl), 2).toFixed(1) + '" height="18" fill="url(#hatch)" ' +
+        'stroke="#E69F00" stroke-width="1.5"/>';
+    }
+    var dx = x(o.xbar);
+    s += '<polygon points="' + dx.toFixed(1) + ',' + (cy - 12) + ' ' + (dx + 9).toFixed(1) +
+      ',' + cy + ' ' + dx.toFixed(1) + ',' + (cy + 12) + ' ' + (dx - 9).toFixed(1) + ',' + cy +
+      '" fill="#E69F00" stroke="#0F1419" stroke-width="1.5"/>';
+  }
+  if (o.mu !== null && o.mu !== undefined) {
+    s += '<line x1="' + x(o.mu) + '" y1="' + (padT - 12) + '" x2="' + x(o.mu) + '" y2="' +
+      (padT + plotH) + '" stroke="#FFFFFF" stroke-width="2" stroke-dasharray="6 5"/>';
+    s += '<text x="' + (x(o.mu) + 7) + '" y="' + (padT - 4) +
+      '" fill="#FFFFFF" font-size="17" font-family="inherit">true mu = ' + f1(o.mu) + '</text>';
+  }
+
+  s += '<line x1="' + padL + '" y1="' + (padT + plotH) + '" x2="' + (W - padR) + '" y2="' +
+    (padT + plotH) + '" stroke="#5C6670" stroke-width="1.5"/>';
+  var ticks = tickValues(o.lo, o.hi);
+  for (i = 0; i < ticks.length; i++) {
+    var ux = x(ticks[i]);
+    s += '<line x1="' + ux + '" y1="' + (padT + plotH) + '" x2="' + ux + '" y2="' +
+      (padT + plotH + 4) + '" stroke="#5C6670" stroke-width="1.5"/>';
+    s += '<text x="' + ux + '" y="' + (padT + plotH + 21) +
+      '" fill="#D8DEE4" font-size="17" font-family="inherit" text-anchor="middle">' +
+      ticks[i] + '</text>';
+  }
+  s += '<text class="axis-title" x="' + (W / 2) + '" y="' + (H - 4) + '" fill="#D8DEE4" ' +
+    'font-size="16" font-family="inherit" text-anchor="middle">Average pick time, minutes</text>';
+  return s + "</svg>";
+}
+
+// ---------------------------------------------------------------------------
+// Game state
+// ---------------------------------------------------------------------------
+var state = {
+  session: 0,
+  weekIndex: 0,
+  spent: 0,
+  phase: "sampling",   // sampling | booked
+  orders: [],
+  rng: null,
+  booked: null,
+  history: [],
+  scenario: null,
+  reduced: false
+};
+
+var el = {};
+["hdr-round", "hdr-score", "pips", "brief", "sample-vals", "sample-chart", "spend",
+ "est-vals", "est-chart", "feedback", "book-row", "btn-one", "btn-ten", "btn-next",
+ "btn-again", "live", "scenario-banner"].forEach(function (id) {
+  el[id] = document.getElementById(id);
+});
+
+function chartPanels(hidden) {
+  document.querySelector('[aria-labelledby="sample-head"]').hidden = hidden;
+  document.querySelector('[aria-labelledby="est-head"]').hidden = hidden;
+}
+function week() { return WEEKS[state.weekIndex]; }
+function weekSeed() {
+  if (state.scenario) return state.scenario.seed;
+  return roundSeedFor(state.session, state.weekIndex + 1);
+}
+function xbarNow() { return state.orders.length ? meanOf(state.orders) : null; }
+function seNow() {
+  return state.orders.length ? sigmaOf(week().pop) / Math.sqrt(state.orders.length) : 0;
+}
+function say(msg) { el.live.textContent = msg; }
+function plural(t) { return t === 1 ? " temp" : " temps"; }
+// "0, 1 or 2" rather than "0 and 1 and 2", since this is read aloud.
+function listOf(a) {
+  if (a.length <= 1) return String(a[0]);
+  return a.slice(0, -1).join(", ") + " or " + a[a.length - 1];
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+function renderBrief() {
+  var w = week(), P = POPULATIONS[w.pop], zs = zonesOf(w), items = "", i;
+  for (i = 0; i < zs.length; i++) {
+    var z = zs[i];
+    var range = i === 0 ? "under " + f1(z.hi)
+      : i === zs.length - 1 ? "over " + f1(z.lo)
+      : f1(z.lo) + " to " + f1(z.hi);
+    items += "<li" + (state.booked === z.temps ? ' class="is-pick"' : "") + "><b>" +
+      z.temps + plural(z.temps) + "</b> · " + range + " min</li>";
+  }
+  el.brief.innerHTML =
+    '<p style="margin:0"><b>' + commas(VOLUME) + " orders</b> next week on the " +
+    esc(P.story.toLowerCase()) + " line \u00b7 timing one order costs " +
+    money(COST_PER_TIMING) + " \u00b7 single orders scatter badly, sigma = " + f2(P.sigma) +
+    " min \u00b7 short of capacity costs $" + OT_RATE.toFixed(2) + " a minute, idle costs $" +
+    IDLE_RATE.toFixed(2) + " a minute. The right roster depends on next week\u2019s " +
+    "<b>average</b>:</p>" +
+    '<ul class="zones">' + items + "</ul>";
+}
+
+// One line on whether the timing bill was worth paying, and why.
+function samplingVerdict(w, n) {
+  var mu = POPULATIONS[w.pop].mu, sigma = sigmaOf(w.pop);
+  var opt = bestStop(w, mu, sigma), step = 10;
+  var gain = expectedBill(w, mu, sigma, n) - expectedBill(w, mu, sigma, n + step);
+  var band = " " + opt.lo + " to " + opt.hi + " all cost about the same.";
+  if (n < opt.lo) {
+    return "Too early: " + step + " more orders would have cost " +
+      money(step * COST_PER_TIMING) + " and saved about " +
+      money(Math.round(gain + step * COST_PER_TIMING)) + " of overtime, a net " +
+      money(Math.round(gain)) + ". Cheapest stop here was near " + opt.n + "." + band;
+  }
+  if (n > opt.hi) {
+    return "Past the point it paid: by " + opt.n + " orders the roster was settled, and " +
+      "the next " + (n - opt.n) + " cost " + money((n - opt.n) * COST_PER_TIMING) +
+      " for almost nothing, since halving the spread needs four times the sample." + band;
+  }
+  return "Well judged: " + opt.n + " was the cheapest stop, and you were inside the flat " +
+    "part of the curve." + band;
+}
+
+function costRow(label, detail, amount, cls) {
+  return "<tr" + (cls ? ' class="' + cls + '"' : "") + '><th scope="row">' + esc(label) +
+    "</th><td>" + esc(detail) + '</td><td class="n">' + esc(amount) + "</td></tr>";
+}
+
+// After a booking the brief has done its job, so the same panel carries the
+// week's bill. Keeping it here costs no extra height on a 720 px iframe.
+function renderResult() {
+  var w = week(), mu = POPULATIONS[w.pop].mu, n = state.orders.length, t = state.booked;
+  var cap = capacityOf(w, t), work = workFor(mu);
+  var timing = n * COST_PER_TIMING, labour = laborCost(w, t, mu);
+  var best = bestTemps(w, mu), floor = laborCost(w, best, mu);
+  var detail = cap >= work
+    ? commas(Math.round(cap - work)) + " idle min at $" + IDLE_RATE.toFixed(2)
+    : commas(Math.round(work - cap)) + " min short at $" + OT_RATE.toFixed(2);
+  document.getElementById("brief-head").textContent = "Week " + (state.weekIndex + 1) + " bill";
+  el.brief.innerHTML =
+    '<table class="costs"><caption class="sr-only">Week ' + (state.weekIndex + 1) +
+    " cost breakdown</caption><tbody>" +
+    costRow("Timing", commas(n) + (n === 1 ? " order" : " orders") + " at " +
+      money(COST_PER_TIMING), money(timing)) +
+    costRow("Labour", t + plural(t) + " booked, " + detail, money(Math.round(labour))) +
+    costRow("Week total", "", money(Math.round(timing + labour)), "sum") +
+    '<tr class="advice"><td colspan="3">' + esc(samplingVerdict(w, n)) + "</td></tr>" +
+    "</tbody></table>";
+}
+
+function renderSample() {
+  var n = state.orders.length;
+  el["sample-vals"].textContent = n === 0 ? "none yet"
+    : n + (n === 1 ? " order" : " orders") + "  average " + fixed2(meanOf(state.orders));
+  el["sample-chart"].innerHTML = histSvg({
+    counts: binCounts(state.orders, POP_AXIS[0], POP_AXIS[1], POP_AXIS[2]),
+    overflow: binOverflow(state.orders, POP_AXIS[0], POP_AXIS[1], POP_AXIS[2]),
+    lo: POP_AXIS[0], hi: POP_AXIS[1], width: POP_AXIS[2],
+    fill: "#F0E442", height: 76, xLabel: "Time for one order, minutes",
+    ariaLabel: n === 0 ? "No orders timed yet."
+      : "Histogram of " + n + " timed orders, averaging " + fixed2(meanOf(state.orders)) +
+        " minutes."
+  });
+  el.spend.textContent = "Timing: " + money(n * COST_PER_TIMING);
+}
+
+function zoneSpan(zs, lo, hi) {
+  var out = [];
+  for (var i = 0; i < zs.length; i++) if (hi > zs[i].lo && lo < zs[i].hi) out.push(zs[i].temps);
+  return out;
+}
+
+function renderEstimate() {
+  var w = week(), n = state.orders.length, xb = xbarNow(), se = seNow();
+  var zs = zonesOf(w), label;
+  if (n === 0) {
+    el["est-vals"].textContent = "";
+    label = "The decision zones, with no estimate on them yet. Time some orders to place one.";
+  } else {
+    var span = zoneSpan(zs, xb - 2 * se, xb + 2 * se);
+    el["est-vals"].textContent = "x-bar " + fixed2(xb) + "  give or take " + fixed2(2 * se);
+    label = "Your estimate is " + fixed2(xb) + " minutes, give or take " + fixed2(2 * se) +
+      ". That range covers " +
+      (span.length === 1 ? "only the " + span[0] + plural(span[0]) + " zone."
+        : "the " + listOf(span) + " temp zones, so it does not yet settle the call.");
+  }
+  el["est-chart"].innerHTML = zoneSvg({
+    zones: zs, lo: EST_AXIS[0], hi: EST_AXIS[1], xbar: xb, se: se, pick: state.booked,
+    mu: state.phase === "booked" ? POPULATIONS[w.pop].mu : null,
+    ariaLabel: label
+  });
+}
+
+function renderBook() {
+  var w = week(), zs = zonesOf(w), top = 0, i, html = "";
+  for (i = 0; i < zs.length; i++) if (zs[i].temps > top) top = zs[i].temps;
+  for (i = 0; i <= top; i++) {
+    var cls = "book" + (state.booked === i ? " booked" : "");
+    html += '<button class="' + cls + '" data-t="' + i + '"' +
+      (state.phase === "booked" || state.orders.length === 0 ? " disabled" : "") +
+      ">Book " + i + plural(i) + "</button>";
+  }
+  el["book-row"].innerHTML = html;
+  Array.prototype.forEach.call(el["book-row"].querySelectorAll("button"), function (b) {
+    b.addEventListener("click", function () { bookTemps(parseInt(b.getAttribute("data-t"), 10)); });
+  });
+}
+
+function renderHeader() {
+  el["hdr-round"].textContent = (state.weekIndex + 1) + " of " + WEEKS.length;
+  // Once a week is booked its timing is already inside state.spent, so only
+  // add the running cost while orders are still being timed.
+  var live = state.phase === "sampling" ? state.orders.length * COST_PER_TIMING : 0;
+  el["hdr-score"].textContent = money(Math.round(state.spent + live));
+  var pips = "";
+  for (var i = 0; i < WEEKS.length; i++) {
+    pips += '<li class="' + (i < state.weekIndex ? "done" : i === state.weekIndex ? "now" : "") + '"></li>';
+  }
+  el.pips.innerHTML = pips;
+}
+
+function renderAll() {
+  renderHeader();
+  if (state.phase === "booked") { renderResult(); } else { renderBrief(); }
+  renderSample(); renderEstimate(); renderBook();
+}
+
+// ---------------------------------------------------------------------------
+// Timing orders and booking
+// ---------------------------------------------------------------------------
+function timeOrders(k) {
+  if (state.phase !== "sampling" || state.scenario) return;
+  var got = draws(state.rng, week().pop, k), i;
+  for (i = 0; i < got.length; i++) state.orders.push(got[i]);
+  renderSample(); renderEstimate(); renderBook(); renderHeader();
+  var n = state.orders.length, zs = zonesOf(week());
+  var span = zoneSpan(zs, xbarNow() - 2 * seNow(), xbarNow() + 2 * seNow());
+  say(n + (n === 1 ? " order" : " orders") + " timed, " + money(n * COST_PER_TIMING) +
+    " spent. Average " + fixed2(xbarNow()) + ", give or take " + fixed2(2 * seNow()) +
+    ". That range covers " + (span.length === 1 ? "only " + span[0] + plural(span[0]) + "."
+      : listOf(span) + " temps."));
+}
+
+function bookTemps(t) {
+  if (state.phase !== "sampling" || state.orders.length === 0) return;
+  var w = week(), P = POPULATIONS[w.pop], mu = P.mu, n = state.orders.length;
+  state.booked = t;
+  state.phase = "booked";
+
+  var timing = n * COST_PER_TIMING;
+  var labour = laborCost(w, t, mu);
+  var best = bestTemps(w, mu), floor = laborCost(w, best, mu);
+  var total = timing + labour;
+  state.spent += total;
+
+  // The reveal: the pile of averages this week's n could have produced.
+  var pile = sampleMeans(new Rng(weekSeed() + 7777), w.pop, n, 1000);
+  el["sample-vals"].textContent = "1,000 averages you might have drawn with n = " + n;
+  el["sample-chart"].innerHTML = histSvg({
+    counts: binCounts(pile, MEANS_AXIS[0], MEANS_AXIS[1], MEANS_AXIS[2]),
+    overflow: binOverflow(pile, MEANS_AXIS[0], MEANS_AXIS[1], MEANS_AXIS[2]),
+    lo: MEANS_AXIS[0], hi: MEANS_AXIS[1], width: MEANS_AXIS[2],
+    fill: "url(#dots)", height: 68, mu: mu, marker: xbarNow(),
+    normalCurve: { mu: mu, sd: sigmaOf(w.pop) / Math.sqrt(n) },
+    xLabel: "Average of n = " + n + " orders, minutes",
+    ariaLabel: "Histogram of 1,000 averages of " + n + " orders, " + pileDescription(pile) +
+      " minutes. Yours, " + fixed2(xbarNow()) + ", is marked."
+  });
+
+  var cls = t === best ? "ok" : "no";
+  var fb;
+  if (t === best) {
+    fb = "Right call. " + t + plural(t) + " was the cheapest roster for a true average of " +
+      f1(mu) + ".";
+  } else {
+    fb = "You booked " + t + plural(t) + "; " + best + plural(best) + " was right for a true " +
+      "average of " + f1(mu) + ", so you paid " + money(Math.round(labour - floor)) + " extra in " +
+      (capacityOf(w, t) < workFor(mu) ? "overtime" : "idle time") + ".";
+  }
+  if (n <= 6) {
+    fb += " With only " + n + " timed, your average was one draw from a very wide pile.";
+  } else if (t === best && timing > 400) {
+    fb += " Though the pile was tight long before you stopped paying.";
+  }
+  el.feedback.className = "feedback " + cls;
+  el.feedback.innerHTML = esc(fb);
+
+  state.history.push({
+    week: state.weekIndex + 1, n: n, temps: t, best: best,
+    timing: timing, labour: labour, floor: floor
+  });
+  renderResult(); renderEstimate(); renderBook(); renderHeader();
+  el["btn-one"].disabled = true;
+  el["btn-ten"].disabled = true;
+  if (state.scenario) { say(fb); return; }
+  el["btn-next"].disabled = false;
+  if (state.weekIndex >= WEEKS.length - 1) el["btn-next"].textContent = "See the season";
+  el["btn-next"].focus();
+  // The bill is a table for sighted users, so the live region has to carry it too.
+  say("Booked " + t + plural(t) + ". True average " + f1(mu) + ". " + fb +
+    " Timing " + money(timing) + " plus labour " + money(Math.round(labour)) + " makes " +
+    money(Math.round(total)) + " for the week. Season so far " +
+    money(Math.round(state.spent)) + ". " + samplingVerdict(w, n));
+}
+
+function startWeek() {
+  document.getElementById("brief-head").textContent = "Next week";
+  state.phase = "sampling";
+  state.orders = [];
+  state.booked = null;
+  state.rng = new Rng(weekSeed());
+  el["btn-one"].disabled = false;
+  el["btn-ten"].disabled = false;
+  el["btn-next"].disabled = true;
+  el.feedback.className = "feedback";
+  el.feedback.textContent = "Time a few orders, then book your temps.";
+  renderAll();
+  var w = week(), P = POPULATIONS[w.pop], zs = zonesOf(w), parts = [], i;
+  for (i = 0; i < zs.length; i++) {
+    parts.push(zs[i].temps + plural(zs[i].temps) + " " +
+      (i === 0 ? "under " + f1(zs[i].hi) : i === zs.length - 1 ? "over " + f1(zs[i].lo)
+        : f1(zs[i].lo) + " to " + f1(zs[i].hi)));
+  }
+  say("Week " + (state.weekIndex + 1) + " of " + WEEKS.length + ". " + commas(VOLUME) +
+    " orders on the " + P.story.toLowerCase() + " line. Single orders have a standard " +
+    "deviation of " + f2(P.sigma) + " minutes. Zones: " + parts.join("; ") +
+    ". Timing one order costs " + money(COST_PER_TIMING) + ".");
+  el["btn-one"].focus();
+}
+
+function nextWeek() {
+  if (state.phase !== "booked") return;
+  if (state.weekIndex >= WEEKS.length - 1) { endGame(); return; }
+  state.weekIndex += 1;
+  startWeek();
+}
+
+// Did the season as a whole buy too little information, or too much?
+function seasonVerdict() {
+  var i, h, w, opt, timed = 0, want = 0, early = 0, late = 0;
+  for (i = 0; i < state.history.length; i++) {
+    h = state.history[i];
+    w = WEEKS[h.week - 1];
+    opt = bestStop(w, POPULATIONS[w.pop].mu, sigmaOf(w.pop));
+    timed += h.n;
+    want += opt.n;
+    if (h.n < opt.lo) early += 1; else if (h.n > opt.hi) late += 1;
+  }
+  var head = "Across the season you timed " + commas(timed) + " orders where about " +
+    commas(want) + " was the cheapest plan. ";
+  if (early > late) {
+    return head + "You stopped too early in " + early + " of " + state.history.length +
+      " weeks. Timing feels like the expensive part because you watch the meter run, but " +
+      "a wrong roster costs far more than the orders that would have prevented it. When " +
+      "the error bar still crosses a zone edge, the next order is cheap insurance.";
+  }
+  if (late > early) {
+    return head + "You kept measuring past the point it paid in " + late + " of " +
+      state.history.length + " weeks. Once the error bar sits inside one zone, more " +
+      "precision cannot change your decision, so it buys nothing. That is the moment to " +
+      "stop, not when the estimate stops moving.";
+  }
+  return head + "You judged the stopping point well: you bought precision while it was " +
+    "changing the decision and stopped when it was not. How much is worth buying depends " +
+    "on sigma and on how close the true average sits to a zone edge, which is why the " +
+    "right n was different every week.";
+}
+
+function endGame() {
+  var i, h, floor = 0, timing = 0, labour = 0, rightCalls = 0;
+  for (i = 0; i < state.history.length; i++) {
+    h = state.history[i];
+    floor += h.floor; timing += h.timing; labour += h.labour;
+    if (h.temps === h.best) rightCalls += 1;
+  }
+  var total = timing + labour;
+
+  document.getElementById("brief-head").textContent =
+    "Season over. " + money(Math.round(total)) + " across " + state.history.length + " weeks.";
+
+  var rows = "";
+  for (i = 0; i < state.history.length; i++) {
+    h = state.history[i];
+    rows += "<tr><th scope=\"row\">Week " + h.week + "</th>" +
+      "<td>" + h.n + " timed, booked " + h.temps + (h.temps === h.best ? "" : " (" + h.best + " was right)") + "</td>" +
+      '<td class="n">' + money(h.timing) + "</td>" +
+      '<td class="n">' + money(Math.round(h.labour)) + "</td>" +
+      '<td class="n">' + money(Math.round(h.timing + h.labour)) + "</td></tr>";
+  }
+  rows += '<tr class="sum"><th scope="row">Season</th><td>' + rightCalls + " of " +
+    state.history.length + " rosters right</td>" +
+    '<td class="n">' + money(timing) + '</td><td class="n">' + money(Math.round(labour)) +
+    '</td><td class="n">' + money(Math.round(total)) + "</td></tr>";
+  rows += '<tr class="floor"><th scope="row">Floor</th><td>every roster right, no timing at all</td>' +
+    '<td class="n">$0</td><td class="n">' + money(Math.round(floor)) +
+    '</td><td class="n">' + money(Math.round(floor)) + "</td></tr>";
+
+  el.brief.innerHTML =
+    '<table class="costs"><caption class="sr-only">Season cost by week</caption>' +
+    '<thead><tr><th scope="col">Week</th><th scope="col">What you did</th>' +
+    '<th scope="col" class="n">Timing</th><th scope="col" class="n">Labour</th>' +
+    '<th scope="col" class="n">Total</th></tr></thead><tbody>' + rows + "</tbody></table>" +
+    '<p style="margin:6px 0 0">You spent ' + money(Math.round(timing)) + " learning what the " +
+    "average was and " + money(Math.round(total - floor - timing)) + " on rosters that were " +
+    "wrong or oversized. The floor is unreachable: knowing the average is what costs money, " +
+    "and because each order cuts the spread by only sigma \u00f7 \u221An, the tenth order " +
+    "buys far more than the hundredth.</p>" +
+    '<p style="margin:6px 0 0">' + esc(seasonVerdict()) + "</p>";
+
+  el["book-row"].innerHTML = "";
+  chartPanels(true);
+  el.feedback.hidden = true;
+  el["btn-one"].hidden = true;
+  el["btn-ten"].hidden = true;
+  el["btn-next"].hidden = true;
+  el["btn-again"].hidden = false;
+  el["btn-again"].focus();
+  say("Season over. " + money(Math.round(total)) + " in all: " + money(Math.round(timing)) +
+    " of timing and " + money(Math.round(labour)) + " of labour, with " + rightCalls + " of " +
+    state.history.length + " rosters right. The floor was " + money(Math.round(floor)) + ".");
+}
+
+function playAgain() {
+  state.session += 1;
+  state.weekIndex = 0;
+  state.spent = 0;
+  state.history = [];
+  document.getElementById("brief-head").textContent = "Next week";
+  el["btn-one"].hidden = false;
+  el["btn-ten"].hidden = false;
+  el["btn-next"].hidden = false;
+  el["btn-next"].textContent = "Next week";
+  el["btn-again"].hidden = true;
+  chartPanels(false);
+  el.feedback.hidden = false;
+  startWeek();
+}
+
+// ---------------------------------------------------------------------------
+// Quiz scenarios. Each is reproducible from a URL parameter, which loads the
+// settings and freezes the seed, so the screenshot is the same every time.
+// ---------------------------------------------------------------------------
+var SCENARIOS = {
+  QA: { week: "W1", n: 4, seed: 2629001,
+        note: "Quiz scenario QA: warehouse line, 4 orders timed, seed 2629001." },
+  QB: { week: "W1", n: 64, seed: 2629003,
+        note: "Quiz scenario QB: warehouse line, 64 orders timed, seed 2629003." }
+};
+
+function applyScenario(key) {
+  var sc = SCENARIOS[key], i;
+  state.scenario = sc;
+  state.reduced = true;
+  for (i = 0; i < WEEKS.length; i++) if (WEEKS[i].id === sc.week) state.weekIndex = i;
+
+  state.phase = "sampling";
+  state.booked = null;
+  state.rng = new Rng(sc.seed);
+  state.orders = draws(state.rng, week().pop, sc.n);
+
+  el["scenario-banner"].hidden = false;
+  el["scenario-banner"].textContent = sc.note;
+  el["btn-one"].hidden = true;
+  el["btn-ten"].hidden = true;
+  el["btn-next"].hidden = true;
+  document.querySelector(".scoreboard").hidden = true;
+  el.pips.hidden = true;
+  renderAll();
+  el["book-row"].innerHTML = "";
+
+  var zs = zonesOf(week());
+  var span = zoneSpan(zs, xbarNow() - 2 * seNow(), xbarNow() + 2 * seNow());
+  say("Scenario " + key + ". " + sc.n + " orders timed. Average " + fixed2(xbarNow()) +
+    ", give or take " + fixed2(2 * seNow()) + ". That range covers " +
+    (span.length === 1 ? "only " + span[0] + plural(span[0]) + "." : listOf(span) + " temps."));
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard map and boot
+// ---------------------------------------------------------------------------
+document.addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (state.scenario) return;
+  var tag = (e.target.tagName || "").toUpperCase();
+  if (tag === "INPUT" || tag === "TEXTAREA") return;
+  var key = e.key;
+
+  if (key === "t" || key === "T") {
+    if (!el["btn-one"].disabled && !el["btn-one"].hidden) {
+      e.preventDefault();
+      timeOrders(e.shiftKey ? 10 : 1);
+    }
+    return;
+  }
+  if (key === "n" || key === "N") {
+    if (!el["btn-next"].disabled && !el["btn-next"].hidden) { e.preventDefault(); nextWeek(); }
+    return;
+  }
+  if (/^[0-4]$/.test(key) && state.phase === "sampling" && state.orders.length > 0) {
+    var btn = el["book-row"].querySelector('button[data-t="' + key + '"]');
+    if (btn && !btn.disabled) { e.preventDefault(); bookTemps(parseInt(key, 10)); }
+  }
+});
+
+(function boot() {
+  state.reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el["btn-one"].addEventListener("click", function () { timeOrders(1); });
+  el["btn-ten"].addEventListener("click", function () { timeOrders(10); });
+  el["btn-next"].addEventListener("click", nextWeek);
+  el["btn-again"].addEventListener("click", playAgain);
+
+  var sc = new URLSearchParams(location.search).get("scenario");
+  if (sc && SCENARIOS[sc.toUpperCase()]) { applyScenario(sc.toUpperCase()); return; }
+  startWeek();
+})();
+
+// Exposed for the headless parity and layout tests only.
+window.__weeks = WEEKS.length;
+window.__sim = {
+  mulberry32: mulberry32, Rng: Rng, POPULATIONS: POPULATIONS, draw: draw,
+  draws: draws, sampleMean: sampleMean, sampleMeans: sampleMeans,
+  seOf: seOf, minN: minN, passesMargin: passesMargin, meanOf: meanOf,
+  sdOf: sdOf, binCounts: binCounts, binOverflow: binOverflow,
+  roundSeedFor: roundSeedFor,
+  shuffleOrder: shuffleOrder, shapeWord: shapeWord,
+  peakPositions: peakPositions, isFlatPile: isFlatPile
+};
+</script>
+</body>
+</html>

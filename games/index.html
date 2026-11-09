@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Statistics games</title>
+<meta name="description" content="Browser games for ECON 262 and ECON 261. Each one is a single page with no login and no stored data.">
+<style>
+  :root { --bg:#0F1419; --panel:#171E26; --line:#2B3642; --text:#FFFFFF; --dim:#D8DEE4; --accent:#009E73; }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:Inter,"Source Sans 3","Helvetica Neue",Arial,sans-serif;
+    font-size:16px; line-height:1.5;
+  }
+  main { max-width:720px; margin:0 auto; padding:28px 18px 50px; }
+  h1 { font-size:26px; margin:0 0 6px; }
+  p.lead { color:var(--dim); margin:0 0 24px; }
+  ul { list-style:none; padding:0; margin:0; }
+  li { border:1px solid var(--line); background:var(--panel); border-radius:8px; margin-bottom:12px; }
+  li a {
+    display:block; padding:14px 16px; color:var(--text); text-decoration:none;
+  }
+  li a:hover, li a:focus-visible { background:#1E2730; }
+  .id { color:var(--accent); font-weight:700; margin-right:8px; font-variant-numeric:tabular-nums; }
+  .name { font-weight:650; font-size:18px; }
+  .meta { color:var(--dim); font-size:14px; margin-top:3px; }
+  li.todo { opacity:.55; }
+  li.todo div { padding:14px 16px; }
+  :focus-visible { outline:3px solid #F0E442; outline-offset:2px; }
+  footer { color:var(--dim); font-size:14px; margin-top:28px; border-top:1px solid var(--line); padding-top:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Statistics games</h1>
+  <p class="lead">
+    Interactive games for ECON 262 and ECON 261. Each one is a single page: no login,
+    no cookies, no analytics, and nothing about you is stored or sent.
+  </p>
+  <ul>
+    <li>
+      <a href="g00_sample_factory/">
+        <span class="name"><span class="id">G0</span>Sample Factory</span>
+        <div class="meta">Module 1. Pull samples from three populations and watch the sampling distribution of the mean take shape.</div>
+      </a>
+    </li>
+    <li class="todo"><div><span class="name"><span class="id">G1</span>Interval Rain</span>
+      <div class="meta">Module 2. Not built yet.</div></div></li>
+    <li class="todo"><div><span class="name"><span class="id">G2</span>Power Budget</span>
+      <div class="meta">Module 5. Not built yet.</div></div></li>
+    <li class="todo"><div><span class="name"><span class="id">G3</span>ANOVA Mixer</span>
+      <div class="meta">Module 9. Not built yet.</div></div></li>
+    <li class="todo"><div><span class="name"><span class="id">G4</span>Forking Paths</span>
+      <div class="meta">Module 10. Not built yet.</div></div></li>
+    <li class="todo"><div><span class="name"><span class="id">G5</span>Guess the Correlation</span>
+      <div class="meta">Module 11. Not built yet.</div></div></li>
+    <li class="todo"><div><span class="name"><span class="id">G6</span>Fit the Line</span>
+      <div class="meta">Module 12. Not built yet.</div></div></li>
+    <li class="todo"><div><span class="name"><span class="id">G7</span>Confounder Detective</span>
+      <div class="meta">Module 14. Not built yet.</div></div></li>
+  </ul>
+  <footer>Built for Western Nevada College. Every game is also described in text on its Canvas lecture page, so the game is never the only route to required content.</footer>
+</main>
+</body>
+</html>
